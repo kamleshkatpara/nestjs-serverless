@@ -1,19 +1,36 @@
 import { NestFactory } from '@nestjs/core';
-import serverlessExpress from '@vendia/serverless-express'
-import { Callback, Context, Handler } from 'aws-lambda';
+import { APIGatewayProxyEvent, APIGatewayProxyResult, Callback, Context, Handler } from 'aws-lambda';
 import { AppModule } from './app.module';
+import { FastifyServerOptions, FastifyInstance, fastify } from 'fastify';
+import awsLambdaFastify from '@fastify/aws-lambda';
+import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
+import { Logger } from '@nestjs/common';
 
-let server: Handler;
+interface NestApp {
+    app: NestFastifyApplication;
+    instance: FastifyInstance;
+}
 
-async function bootstrap(): Promise<Handler> {
-    const app = await NestFactory.create(AppModule);
+let cachedNestApp: NestApp;
+
+async function bootstrap(): Promise<NestApp> {
+    const serverOptions: FastifyServerOptions = { logger: true };
+    const instance: FastifyInstance = fastify(serverOptions);
+    const app = await NestFactory.create<NestFastifyApplication>(AppModule, new FastifyAdapter(instance), {
+        logger: !process.env.AWS_EXECUTION_ENV ? new Logger() : console
+    });
     await app.init();
-
-    const expressApp = app.getHttpAdapter().getInstance();
-    return serverlessExpress({ app: expressApp });
+    return { app, instance };
 }
 
-export const handler: Handler = async (event: any, context: Context, callback: Callback) => {
-    server = server ?? (await bootstrap());
-    return server(event, context, callback);
-}
+export const handler = async (
+    event: APIGatewayProxyEvent,
+    context: Context,
+): Promise<APIGatewayProxyResult> => {
+    if (!cachedNestApp) {
+        cachedNestApp = await bootstrap();
+    }
+    const proxy = awsLambdaFastify(cachedNestApp.instance);
+
+    return proxy(event, context);
+};
