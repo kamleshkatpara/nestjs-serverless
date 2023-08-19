@@ -2,16 +2,16 @@ service: nestjs-serverless
 
 plugins:
   - serverless-offline
-  - serverless-jetpack
 
 provider:
   name: aws
   runtime: nodejs18.x
   region: ap-south-1
+  timeout: 100
 
 functions:
   main:
-    handler: dist/serverless.handler
+    handler: dist/mainserverless.handler
     events:
       - http:
           method: ANY
@@ -19,9 +19,3 @@ functions:
       - http:
           method: ANY
           path: '{proxy+}'
-
-package:
-  exclude:
-    - '*'
-    - '**/node_modules/aws-sdk/**' # included on Lambda.
-    - '!package.json'
